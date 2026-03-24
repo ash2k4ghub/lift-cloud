@@ -27,41 +27,58 @@ def recommend():
     boarding = int(request.args.get("boarding"))
     destination = int(request.args.get("destination"))
 
-    user_direction = "UP" if destination > boarding else "DOWN"
-
-    best = None
+    best_lift = None
     best_eta = float("inf")
 
     for lift in lift_data:
 
-        floor = lift["floor"]
-        eta = lift["eta"]
+        current_floor = lift["floor"]
+        state = lift["state"]
+        remaining_pulses = lift["remaining_pulses"]
+        target_floor = lift["target_floor"]
 
-        # direction logic
-        if floor < boarding:
-            direction = "UP"
-        elif floor > boarding:
-            direction = "DOWN"
+        # -------- DIRECT ETA --------
+        distance = abs(current_floor - boarding)
+        pulses = distance * PULSES_PER_FLOOR
+        direct_eta = pulses * PULSE_TIME
+
+        # -------- FUTURE ETA --------
+        future_eta = float("inf")
+
+        if state == "MOVING":
+
+            finish_time = remaining_pulses * PULSE_TIME + STOP_TIME
+
+            future_distance = abs(target_floor - boarding)
+            future_travel = future_distance * PULSES_PER_FLOOR * PULSE_TIME
+
+            future_eta = finish_time + future_travel
+
+        elif state == "STOPPING":
+
+            # we don't have stop_start in cloud → approximate
+            remaining_stop = STOP_TIME
+
+            future_distance = abs(current_floor - boarding)
+            future_travel = future_distance * PULSES_PER_FLOOR * PULSE_TIME
+
+            future_eta = remaining_stop + future_travel
+
         else:
-            direction = user_direction
+            future_eta = direct_eta
 
-        if direction == user_direction and eta < best_eta:
-            best_eta = eta
-            best = lift
+        # -------- FINAL SELECTION --------
+        chosen_eta = min(direct_eta, future_eta)
 
-    if best:
-        return jsonify({
-            "best_lift": best["name"],
-            "eta": best_eta,
-            "mode": "STRICT"
-        })
+        if chosen_eta < best_eta:
+            best_eta = chosen_eta
+            best_lift = lift
 
     return jsonify({
-        "best_lift": "None",
-        "eta": -1,
-        "mode": "FALLBACK"
+        "best_lift": best_lift["name"],
+        "eta": int(best_eta),
+        "mode": "SMART-FUTURE-AWARE"
     })
-
 if __name__ == "__main__":
     import os
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
