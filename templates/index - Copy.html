@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<title>Smart Lift Control System</title>
+
+<style>
+
+body{
+font-family:Arial;
+background:#e9eef3;
+text-align:center;
+margin:0;
+padding:0;
+}
+
+h1{
+font-size:20px;
+margin-top:10px;
+}
+
+/* BUILDING GRID */
+
+.building{
+display:grid;
+grid-template-columns:repeat(2,1fr);
+gap:12px;
+margin:10px;
+justify-items:center;
+}
+
+/* SHAFT */
+
+.shaft{
+position:relative;
+height:220px;
+width:110px;
+background:linear-gradient(to bottom,#ffffff,#dfe6ec);
+border-radius:10px;
+box-shadow:0px 6px 12px rgba(0,0,0,0.25);
+overflow:hidden;
+}
+
+/* FLOORS */
+
+.floor-line{
+height:55px;
+border-top:1px solid #cfd6dc;
+display:flex;
+align-items:center;
+justify-content:center;
+font-size:11px;
+color:#555;
+position:relative;
+z-index:2;
+}
+
+/* LIFT CABIN */
+
+.elevator{
+position:absolute;
+left:5px;
+width:40px;
+height:40px;
+font-size:26px;
+transition:top 0.5s linear;
+z-index:1;
+}
+
+/* INFO */
+
+.lift-info{
+margin-bottom:4px;
+}
+
+.lift-name{
+font-weight:bold;
+font-size:14px;
+}
+
+.direction{
+font-size:18px;
+}
+
+.eta{
+font-size:12px;
+color:#444;
+}
+
+/* PROGRESS */
+
+.progress-container{
+width:80%;
+height:6px;
+background:#d0d7de;
+margin:4px auto;
+border-radius:8px;
+}
+
+.progress-bar{
+height:6px;
+width:0%;
+background:linear-gradient(90deg,#3498db,#2ecc71);
+border-radius:8px;
+transition:width 0.5s;
+}
+
+/* BUTTONS */
+
+.controls{
+margin-top:10px;
+}
+
+button{
+padding:10px;
+margin:4px;
+width:130px;
+font-size:13px;
+border:none;
+border-radius:6px;
+background:#3498db;
+color:white;
+}
+
+button:hover{
+background:#2c80b4;
+}
+
+.result{
+margin-top:8px;
+font-size:16px;
+font-weight:bold;
+}
+
+</style>
+</head>
+
+<body>
+
+<h1>Smart Lift Dashboard</h1>
+
+<div class="controls">
+
+<h3>Boarding Floor</h3>
+<button onclick="setBoard(0)">Ground</button>
+<button onclick="setBoard(1)">Floor 1</button>
+<button onclick="setBoard(2)">Floor 2</button>
+<button onclick="setBoard(3)">Floor 3</button>
+
+<h3>Destination Floor</h3>
+<button onclick="setDest(0)">Ground</button>
+<button onclick="setDest(1)">Floor 1</button>
+<button onclick="setDest(2)">Floor 2</button>
+<button onclick="setDest(3)">Floor 3</button>
+
+<br>
+
+<button onclick="requestLift()">Find Best Lift</button>
+
+<div class="result" id="recommendation"></div>
+
+</div>
+
+<div class="building" id="building"></div>
+
+<script>
+
+const FLOOR_HEIGHT = 55
+const CABIN_HEIGHT = 40
+
+let boarding = null
+let destination = null
+
+/* INPUT */
+
+function setBoard(f){
+boarding = f
+alert("Boarding: " + f)
+}
+
+function setDest(f){
+destination = f
+alert("Destination: " + f)
+}
+
+/* UI */
+
+function createLiftUI(lift){
+
+let safeName = lift.name.replace(/\s/g,'_')
+
+return `
+
+<div>
+
+<div class="lift-info">
+<div class="lift-name">${lift.name}</div>
+<div class="direction" id="dir_${safeName}">🟢</div>
+<div class="eta" id="eta_${safeName}">ETA : --</div>
+</div>
+
+<div class="shaft">
+
+<div class="progress-container">
+<div class="progress-bar" id="bar_${safeName}"></div>
+</div>
+
+<div class="elevator" id="lift_${safeName}">🛗</div>
+
+<div class="floor-line">Floor 3</div>
+<div class="floor-line">Floor 2</div>
+<div class="floor-line">Floor 1</div>
+<div class="floor-line">Ground</div>
+
+</div>
+
+</div>
+
+`
+}
+
+/* LOAD */
+
+function loadStatus(){
+
+fetch("https://lift-cloud.onrender.com/status")
+.then(res=>res.json())
+.then(data=>{
+
+let html=""
+data.forEach(lift=>{
+html+=createLiftUI(lift)
+})
+
+document.getElementById("building").innerHTML=html
+updateLiftPositions(data)
+
+})
+}
+
+/* MAIN UPDATE */
+
+function updateLiftPositions(data){
+
+data.forEach(lift=>{
+
+let safeName = lift.name.replace(/\s/g,'_')
+
+let el=document.getElementById("lift_"+safeName)
+let dir=document.getElementById("dir_"+safeName)
+let bar=document.getElementById("bar_"+safeName)
+let eta=document.getElementById("eta_"+safeName)
+
+if(!el) return
+
+/* -------- CORRECT CONTINUOUS MOVEMENT -------- */
+
+let remaining = lift.remaining_pulses || 0
+let total = lift.total_pulses || 0
+
+let start = lift.start_floor ?? lift.floor
+let target = lift.target_floor ?? lift.floor
+
+let progress = 0
+
+if(total > 0){
+    progress = (total - remaining) / total
+}
+
+let exactPosition = start + (target - start) * progress
+
+if(remaining === 0){
+    exactPosition = lift.floor
+}
+
+/* LIMIT (IMPORTANT FIX) */
+exactPosition = Math.max(0, Math.min(3, exactPosition))
+
+let top = (3 - exactPosition) * FLOOR_HEIGHT
+
+el.style.top = top + "px"
+
+/* -------- FIXED DIRECTION -------- */
+
+if(lift.state==="MOVING"){
+
+    if(lift.target_floor > lift.start_floor){
+        dir.innerHTML="⬆️"
+    } else if(lift.target_floor < lift.start_floor){
+        dir.innerHTML="⬇️"
+    } else {
+        dir.innerHTML="🟢"
+    }
+
+}
+else if(lift.state==="STOPPING"){
+    dir.innerHTML="⏳"
+}
+else{
+    dir.innerHTML="🟢"
+}
+
+/* -------- ETA -------- */
+
+if(lift.eta!==undefined)
+eta.innerHTML="ETA : "+lift.eta+" sec"
+
+/* -------- PROGRESS BAR (DYNAMIC TIME) -------- */
+
+let total_time = total * 4.7
+let remaining_time = remaining * 4.7
+
+let prog = 0
+
+if(total_time > 0){
+prog = ((total_time - remaining_time)/total_time)*100
+}
+
+prog = Math.max(0, Math.min(100, prog))
+
+bar.style.width = prog + "%"
+
+})
+
+}
+
+/* REQUEST */
+
+function requestLift(){
+
+if(boarding===null || destination===null){
+alert("Select both floors")
+return
+}
+
+fetch("https://lift-cloud.onrender.com/recommend?boarding=${boarding}&destination=${destination}")
+.then(res=>res.json())
+.then(data=>{
+
+document.getElementById("recommendation").innerHTML =
+`Best Lift: ${data.best_lift}<br>
+ETA: ${data.eta} sec<br>
+Mode: ${data.mode}`
+
+})
+
+}
+
+/* AUTO REFRESH */
+
+setInterval(()=>{
+fetch("https://lift-cloud.onrender.com/status")
+.then(res=>res.json())
+.then(data=>{
+updateLiftPositions(data)
+})
+},500)
+
+loadStatus()
+
+</script>
+
+</body>
+</html>
