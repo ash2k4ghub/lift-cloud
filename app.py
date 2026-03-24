@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask import render_template
 
 app = Flask(__name__)
 CORS(app)
@@ -8,7 +9,7 @@ lift_data = []
 
 @app.route("/")
 def home():
-    return "Lift Cloud Server Running"
+    return render_template("index - Copy.html")
 
 @app.route("/update", methods=["POST"])
 def update():
