@@ -333,7 +333,7 @@ alert("Select both floors")
 return
 }
 
-fetch("https://lift-cloud.onrender.com/recommend?boarding=${boarding}&destination=${destination}")
+fetch(`https://lift-cloud.onrender.com/recommend?boarding=${boarding}&destination=${destination}`)
 .then(res=>res.json())
 .then(data=>{
 
