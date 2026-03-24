@@ -35,15 +35,35 @@ def recommend():
         current_floor = lift["floor"]
         state = lift["state"]
         remaining_pulses = lift["remaining_pulses"]
+        total_pulses = lift["total_pulses"]
         target_floor = lift["target_floor"]
 
-        # -------- DIRECT ETA --------
+        # ---------------- EXACT ETA LOGIC ----------------
+
+        # SAME as lift.eta()
         distance = abs(current_floor - boarding)
         pulses = distance * PULSES_PER_FLOOR
-        direct_eta = pulses * PULSE_TIME
+        travel_time = pulses * PULSE_TIME
 
-        # -------- FUTURE ETA --------
-        future_eta = float("inf")
+        if current_floor == boarding and state == "IDLE":
+            direct_eta = 0
+
+        elif state == "IDLE":
+            direct_eta = travel_time
+
+        elif state == "MOVING":
+            remaining_time = remaining_pulses * PULSE_TIME
+            direct_eta = remaining_time + STOP_TIME + travel_time
+
+        elif state == "STOPPING":
+            # approximation (since stop_start not available)
+            remaining_stop = STOP_TIME
+            direct_eta = remaining_stop + travel_time
+
+        else:
+            direct_eta = 9999
+
+        # ---------------- FUTURE ETA ----------------
 
         if state == "MOVING":
 
@@ -56,7 +76,6 @@ def recommend():
 
         elif state == "STOPPING":
 
-            # we don't have stop_start in cloud → approximate
             remaining_stop = STOP_TIME
 
             future_distance = abs(current_floor - boarding)
@@ -67,7 +86,8 @@ def recommend():
         else:
             future_eta = direct_eta
 
-        # -------- FINAL SELECTION --------
+        # ---------------- FINAL SELECTION ----------------
+
         chosen_eta = min(direct_eta, future_eta)
 
         if chosen_eta < best_eta:
